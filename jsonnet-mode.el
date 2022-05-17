@@ -643,27 +643,32 @@ TYPE is an opening paren-like character."
 ;; Utilities for evaluating and jumping around Jsonnet code.
 ;;;###autoload
 (defun jsonnet-eval-buffer ()
-  "Run jsonnet with the path of the current file."
+  "Run jsonnet passing it current buffer content via stdin"
   (interactive)
-  (let ((file-to-eval (file-truename (buffer-file-name)))
+  (let ((jsonnet-buffer-fname (if buffer-file-name (file-truename (buffer-file-name)) nil))
         (search-dirs jsonnet-library-search-directories)
         (output-buffer-name "*jsonnet output*"))
-    (save-some-buffers (not compilation-ask-about-save)
-                       (let ((directories (cons (file-name-directory file-to-eval)
-                                                search-dirs)))
-                         (lambda ()
-                           (member (file-name-directory (file-truename (buffer-file-name)))
-                                   directories))))
-    (let ((cmd jsonnet-command)
+    (if jsonnet-buffer-fname
+        (save-some-buffers (not compilation-ask-about-save)
+                           (let ((directories (cons (file-name-directory jsonnet-buffer-fname)
+                                                    search-dirs)))
+                             (lambda ()
+                               (member (file-name-directory (file-truename (buffer-file-name)))
+                                       directories)))))
+    (let ((jsonnet-buffer (current-buffer))
+          (beg (point-min))
+          (end (point-max))
+          (cmd jsonnet-command)
           (args (append jsonnet-command-options
                         (cl-loop for dir in search-dirs
                                  collect "-J"
                                  collect dir)
-                        (list file-to-eval))))
+                        (list "-"))))
       (with-current-buffer (get-buffer-create output-buffer-name)
         (setq buffer-read-only nil)
         (erase-buffer)
-        (if (zerop (apply #'call-process cmd nil t nil args))
+        (insert-buffer-substring jsonnet-buffer beg end)
+        (if (zerop (apply #'call-process-region (point-min) (point-max) cmd t t t args))
             (progn
               (when (fboundp 'json-mode)
                 (json-mode))
